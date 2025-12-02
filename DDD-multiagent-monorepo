@@ -1,0 +1,126 @@
+1. Keep Core Domain Objects for Key Concepts Only
+Define lightweight domain models for:
+
+Encounter
+
+ClinicalNote (with note_type, text, etc.)
+
+Possibly LabResult, VitalSign (if they become central to agent workflows)
+
+These can be implemented as @dataclasses or Pydantic models in domain/:
+
+python
+Copy
+Edit
+# domain/clinical_note/models.py
+from pydantic import BaseModel
+
+class ClinicalNote(BaseModel):
+    note_type: str
+    text: str
+2. Foster Domain Isolation Without Full Marshalling
+Use adapters/fhir_parser.py to parse FHIR/JSON and return partial domain models or dictionaries.
+
+Only convert to full ClinicalNote, etc., in places where behavior or validation is required.
+
+3. Retain a Strong application/ Layer
+Application services orchestrate workflows (e.g., calling agents, preprocessing, postprocessing).
+
+Application is where most expansion and orchestration logic lives.
+
+4. Define Bounded Contexts as Needed
+You can eventually organize domain/clinical, domain/lab, domain/vital, etc., if complexity grows.
+
+Each bounded context should own its agents, services, and models.
+
+5. Evaluation and Prompt Versions as First-Class Concepts
+Treat PromptVersion and EvaluationRun as domain objects or value objects in an evaluation/ context.
+
+This aligns with your CI/CD goals and allows reproducibility.
+
+
+
+repo-root/
+├── backend/
+│   ├── app/
+│   │   ├── domain/
+│   │   │   ├── clinical_note/
+│   │   │   ├── encounter/
+│   │   │   └── evaluation/
+│   │   ├── application/
+│   │   │   ├── services/
+│   │   │   └── dtos/
+│   │   ├── infrastructure/
+│   │   │   ├── fhir_parser.py
+│   │   │   ├── azure_openai.py
+│   │   │   ├── keyvault_client.py
+│   │   │   └── blob_writer.py
+│   │   ├── agents/
+│   │   │   ├── base_agent.py
+│   │   │   ├── extract_soap_agent.py
+│   │   │   └── summarization_agent.py
+│   │   ├── evaluation/
+│   │   │   ├── eval_suite.py         # Evaluation framework for CI/CD
+│   │   │   └── fixtures/             # Gold standards, test inputs
+│   │   ├── api/
+│   │   │   └── main.py               # FastAPI entrypoint
+│   │   └── config.py
+│   ├── tests/
+│   │   ├── test_agents/
+│   │   ├── test_api/
+│   │   └── test_eval/
+│   └── requirements.txt
+│
+├── experimentation/
+│   ├── prompts/
+│   │   ├── version_001_extract.txt
+│   │   └── version_002_summary.txt
+│   ├── notebooks/
+│   │   └── prompt_dev.ipynb          # For trying new prompt versions
+│   ├── runners/
+│   │   └── local_eval_runner.py      # Compare outputs vs gold std
+│   └── README.md                     # How to test prompts, log metrics
+│
+├── frontend/
+│   ├── ui/
+│   │   ├── pages/
+│   │   │   └── index.tsx
+│   │   ├── components/
+│   │   │   └── OutputViewer.tsx
+│   │   └── App.tsx
+│   └── package.json                  # Next.js or Vite-based frontend
+│
+├── streamlit_app/                # 🧪 DS-friendly local UI
+│   ├── main.py                   # Streamlit entry point
+│   ├── pages/
+│   │   ├── 1_Prompt_Tester.py    # Upload JSON, try prompt
+│   │   └── 2_Prompt_Comparer.py  # Side-by-side version eval
+│   ├── utils/
+│   │   ├── load_prompt.py
+│   │   └── run_agent.py          # Can call FastAPI or agents directly
+│   └── requirements.txt          # Only Streamlit dependencies
+├── .github/
+│   └── workflows/
+│       └── ci.yml                    # Run eval_suite.py before deploy
+├── README.md
+└── pyproject.toml or setup.py
+
+ Example Workflow for Data Scientist
+Clone repo, go to streamlit_app/
+
+Run: streamlit run main.py
+
+Choose a prompt version, paste or upload clinical JSON
+
+View generated output, copy it to Gold Standard if good
+
+Save prompt version (e.g., as v003_extract.txt)
+
+Ping engineers to run eval_suite.py with new prompt
+
+🔄 Streamlit Use Modes
+Mode	Streamlit App Calls	Pros	Notes
+Local/Offline	Runs run_agent.py directly	Super fast, no server dependency	Great for iteration, but may bypass actual infra
+Connected	Calls backend.api.main endpoints	Realistic view of deployed behavior	Ensure backend is running
+
+You can toggle between modes with a simple config["MODE"] = "local" vs "remote".
