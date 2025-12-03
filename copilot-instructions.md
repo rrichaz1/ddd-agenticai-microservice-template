@@ -1,211 +1,93 @@
-.github/COPILOT_INSTRUCTIONS
-Instructions for GitHub Copilot
-🎯 Goal
+# GitHub Copilot Project Instructions
 
-This repository uses a Domain-Driven Design (DDD) architecture for building Python microservices using FastAPI, src/ layout, multiple deployable apps, shared utilities, evaluation pipelines, and Streamlit demo apps.
-Copilot should generate and update code following these conventions.
+## 🧱 Overall Architectural Style
+Use **Domain-Driven Design (DDD)** and organize code according to:
+- `api/` for controllers (FastAPI routers)
+- `application/` for application services and use-cases
+- `domain/` for entities, value objects, domain events, and repository interfaces
+- `infrastructure/` for adapters and external integrations (DB, LLMs, queues, cloud)
+- `shared/` for utilities, cross-cutting concerns, exceptions, logging, configuration
 
-📐 General Architectural Rules
-1️⃣ Use DDD Layers
+This project contains multiple deployable applications (e.g., app1, app2) inside `src/`.
 
-Each microservice (app1, app2, etc.) must be structured via:
+## 📂 Required Python Project Structure
 
-appX/
-  api/           → FastAPI routers, request/response models
-  application/   → services coordinating domain logic
-  domain/        → domain models, logic, aggregates, value objects
-  infrastructure/→ adapters, repositories, clients
+When generating new modules/components, follow this layout:
 
-
-Copilot must NOT mix domain, application, and infrastructure concerns.
-Domain layer stays pure and framework-free.
-
-2️⃣ Use src/ layout
-
-All packages must live under:
 
 src/
-  app1/
-  app2/
-  shared/
-
-
-Imports must always be absolute, never relative:
-
-❌ from ..domain import X
-✅ from app1.domain.model import X
-
-3️⃣ Multi-App Architecture
-
-Copilot should expect multiple deployables in the same repo:
-
-src/app1/ → microservice 1  
-src/app2/ → microservice 2
-src/shared/ → utilities / common libs
-
-
-Shared code (e.g., OpenAI adapter, config loader, logging) goes in:
-
-src/shared/utils/
-src/shared/adapters/
-
-4️⃣ Streamlit Demo Apps
-
-Local test UIs must be placed under:
-
-streamlit_apps/
-  app1_demo/
-  app2_demo/
-  shared_components/
-
-
-Copilot should generate Streamlit apps that import directly from src/ modules.
-
-⚒️ Copilot Coding Conventions
-5️⃣ Use uv for dependency management
-
-When generating commands or docs, Copilot should prefer:
-
-uv add fastapi
-uv run uvicorn app1.api.main:app
-
-6️⃣ FastAPI Structure
-
-For each microservice, Copilot should create:
-
+app_name/
 api/
-
-Routers organized by domain context
-
-Pydantic models for requests/responses
-
+v1/
+endpoints.py
 application/
-
-Handlers, orchestrating domain logic
-
-No external service code inside domain
-
+services.py
+dto.py
 domain/
-
-Entities, value objects, invariants
-
-Should not import FastAPI or infrastructure
-
+models.py
+events.py
+repositories.py
 infrastructure/
-
-DB, external APIs, OpenAI adapters
-
-Config & logging utilities
-
-🧪 Testing Standards
-
-Copilot should create tests under:
-
+repositories/
+llm/
+persistence/
+main.py
+shared/
+core/
+llm/
+utils/
+streamlit/
+app1_ui.py
+app2_ui.py
 tests/
-  app1/
-  app2/
-  shared/
+evaluation/
 
+markdown
+Copy code
 
-Following conventions:
+## 📦 Key Conventions
 
-Use pytest
+### 1. Use `src/` root imports:
+- Generate imports using **absolute imports**, not relative (`from app1.domain.models import Encounter`).
 
-Use async tests when applicable
+### 2. LLM Integration
+- All LLM clients must be created in `infrastructure/llm/`.
+- Use a factory pattern (`shared.llm.factory`) to choose models.
+- Domain and application layers must never import OpenAI, Azure, or API SDKs.
 
-Use FastAPI TestClient or HTTPX
+### 3. FastAPI Layer (Controllers)
+- Always create routers under `app_name/api/v1/`.
+- Only handle request/response and dependency injection.
 
-🧠 Evaluation Pipeline
+### 4. Application Layer
+- Contains the use-case logic and orchestrates domain + infrastructure.
+- No I/O or vendor SDKs allowed.
 
-Copilot should create evaluation pipelines under:
+### 5. Domain Layer
+- Must contain only pure business logic.
+- No imports from FastAPI, OpenAI, or cloud SDKs.
 
-eval/
-  scenarios/
-  metrics/
-  runners/
+### 6. Infrastructure Layer
+- All external integration code must live here.
+- Repository implementations, LLM clients, database clients.
 
+### 7. Testing
+- Use pytest.
+- Create mirrors of the folder structure inside `/tests`.
 
-Where:
+### 8. Evaluation Pipelines
+- Store LLM evaluation code in `/evaluation` separate from production code.
 
-scenarios = test prompts, LLM inputs
+## ✔️ Copilot Should:
+- Suggest DDD-aligned structure
+- Prefer dependency injection patterns
+- Generate absolute imports
+- Use pydantic models for DTOs
+- Keep domain layer free of libs like FastAPI/OpenAI
 
-metrics = correctness, hallucination, latency
+## ❌ Copilot Should NOT:
+- Suggest relative imports (../../)
+- Put business logic inside controllers
+- Call LLMs directly from domain/application layers
+- Mix evaluation code inside src/
 
-runners = scripts callable via CI
-
-Evaluation must run locally and via GitHub Actions.
-
-🔄 CI/CD Expectations
-
-Copilot must generate GitHub Actions workflows with:
-
-uv sync for dependencies
-
-running tests
-
-running evaluation pipeline
-
-building & pushing Docker images for each app (app1, app2)
-
-Artifacts:
-
-app1-image:latest
-app2-image:latest
-
-🧱 Directory Layout to Follow
-
-Copilot must follow this structure unless explicitly instructed otherwise:
-
-src/
-  app1/
-    api/
-    application/
-    domain/
-    infrastructure/
-  app2/
-    api/
-    application/
-    domain/
-    infrastructure/
-  shared/
-    utils/
-    adapters/
-streamlit_apps/
-  app1_demo/
-  app2_demo/
-  shared_components/
-eval/
-tests/
-.github/
-  workflows/
-  COPILOT_INSTRUCTIONS
-
-🦾 Copilot Must Enforce Clean Code
-
-Prefer type-hinted functions
-
-No business logic inside API routers
-
-Domain logic = pure, framework-free
-
-External systems only via adapters
-
-Config loaded through shared utilities
-
-No deep relative imports
-
-📌 Example Prompts Copilot Should Respond Well To
-
-Copilot should know how to generate:
-
-“Create a FastAPI router in app1/api/items.py and wire it to the app.”
-
-“Add a new domain entity in app2 with invariants.”
-
-“Create an evaluation scenario comparing two LLM responses.”
-
-“Generate a Streamlit UI that tests the app1 /predict endpoint.”
-
-“Add GitHub Actions workflow to run tests and eval using uv.”
-
-✔️ End of Copilot Instructions
