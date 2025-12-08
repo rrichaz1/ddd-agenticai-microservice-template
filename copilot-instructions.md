@@ -14,80 +14,118 @@ This project contains multiple deployable applications (e.g., app1, app2) inside
 
 When generating new modules/components, follow this layout:
 
-
-src/
-app_name/
-api/
-v1/
-endpoints.py
-application/
-services.py
-dto.py
-domain/
-models.py
-events.py
-repositories.py
-infrastructure/
-repositories/
-llm/
-persistence/
-main.py
-shared/
-core/
-llm/
-utils/
-streamlit/
-app1_ui.py
-app2_ui.py
-tests/
-evaluation/
-
-markdown
-Copy code
+.
+├── copilotinstructions.md  # Instructions for GitHub Copilot
+├── pyproject.toml          # Project configuration (dependencies, build)
+└── src/
+    └── clinical_app/       # Renamed from app_name for clarity
+        ├── main.py         # FastAPI application entry point
+        │
+        ├── api/            # Presentation/API Layer
+        │   ├── dependencies.py     # Dependency Injection setup (Factories)
+        │   └── v1/
+        │       └── clinical/
+        │           └── endpoints.py  # Routes for clinical summarization
+        │
+        ├── application/    # Application Layer
+        │   ├── dtos/               # Data Transfer Objects (Pydantic models)
+        │   │   └── clinical_dtos.py
+        │   └── use_cases/          # Use Cases (Orchestration/Agentic flow)
+        │       └── summarize_account.py # The asyncio.gather logic
+        │
+        ├── domain/         # Domain Layer (The Core)
+        │   ├── models/             # Domain Entities/Value Objects
+        │   │   ├── note.py
+        │   │   └── summary.py
+        │   └── ports/              # Interfaces/Ports (ABCs)
+        │       ├── llm_port.py     # NoteProcessorAgent (The LLM Contract)
+        │       └── repository_port.py # Persistence Contract
+        │
+        ├── infrastructure/ # Infrastructure Layer (The Adapters/Implementation)
+        │   ├── llm/                # LLM Implementations
+        │   │   ├── openai_adapter.py  # Contains the asyncio.Semaphore
+        │   │   └── azure_adapter.py
+        │   └── repositories/       # Persistence Implementations
+        │       └── postgres_repo.py  # Mock/Real DB access
+        │
+        └── shared/         # Shared Utilities
+            └── utils/
+                └── text_cleaning.py
 
 ## 📦 Key Conventions
+# Project Instructions for GitHub Copilot
 
-### 1. Use `src/` root imports:
-- Generate imports using **absolute imports**, not relative (`from app1.domain.models import Encounter`).
+## 1. Project Goal and Architecture
+This is a FastAPI project built on **Domain-Driven Design (DDD)** principles, specifically using the **Ports and Adapters** (Hexagonal) pattern.
 
-### 2. LLM Integration
-- All LLM clients must be created in `infrastructure/llm/`.
-- Use a factory pattern (`shared.llm.factory`) to choose models.
-- Domain and application layers must never import OpenAI, Azure, or API SDKs.
+The core business logic is **Clinical Note Summarization**. The process is "Agentic":
+1.  Receive a batch of notes for a single patient account.
+2.  Process each note **in parallel** via a rate-limited external LLM API.
+3.  Save the intermediate summary of each note.
+4.  Aggregate all intermediate summaries into a final report.
+5.  Save the final report.
 
-### 3. FastAPI Layer (Controllers)
-- Always create routers under `app_name/api/v1/`.
-- Only handle request/response and dependency injection.
+The system must handle external **rate limits** and allow easy **swapping of LLM providers** (e.g., OpenAI, Azure).
 
-### 4. Application Layer
-- Contains the use-case logic and orchestrates domain + infrastructure.
-- No I/O or vendor SDKs allowed.
+## 2. Core Domain Contracts (Ports)
 
-### 5. Domain Layer
-- Must contain only pure business logic.
-- No imports from FastAPI, OpenAI, or cloud SDKs.
+### A. File: `src/clinical_app/domain/models/note.py`
+Create Python dataclasses for the core data structures:
+* `ClinicalNote`: Must contain `id: str`, `content: str`, `account_id: str`.
+* `NoteSummary`: Must contain `note_id: str`, `key_findings: List[str]`, `diagnoses: List[str]`.
 
-### 6. Infrastructure Layer
-- All external integration code must live here.
-- Repository implementations, LLM clients, database clients.
+### B. File: `src/clinical_app/domain/ports/llm_port.py`
+Define the **Agent Contract** using `abc.ABC`. This is the Domain Service interface.
+* Class: `NoteProcessorAgent(ABC)`
+* Method: `summarize_note(self, note: ClinicalNote) -> NoteSummary`.
 
-### 7. Testing
-- Use pytest.
-- Create mirrors of the folder structure inside `/tests`.
+### C. File: `src/clinical_app/domain/ports/repository_port.py`
+Define the **Persistence Contract** using `abc.ABC`.
+* Class: `ArtifactRepository(ABC)`
+* Method 1: `save_note_summary(self, summary: NoteSummary) -> None` (for intermediate results).
+* Method 2: `save_account_summary(self, account_id: str, final_report: dict) -> None` (for final report).
 
-### 8. Evaluation Pipelines
-- Store LLM evaluation code in `/evaluation` separate from production code.
+## 3. Infrastructure Adapters (Implementations)
 
-## ✔️ Copilot Should:
-- Suggest DDD-aligned structure
-- Prefer dependency injection patterns
-- Generate absolute imports
-- Use pydantic models for DTOs
-- Keep domain layer free of libs like FastAPI/OpenAI
+### A. File: `src/clinical_app/infrastructure/llm/openai_adapter.py`
+Implement the `NoteProcessorAgent` interface. **Crucially**, use `asyncio.Semaphore` to manage rate limits for concurrent LLM calls.
+* Class: `OpenAINoteProcessor(NoteProcessorAgent)`
+* `__init__` must accept `concurrency_limit: int` and initialize `self.semaphore = asyncio.Semaphore(concurrency_limit)`.
+* `summarize_note` must use `async with self.semaphore:` to wrap the simulated LLM call. Simulate LLM latency with `await asyncio.sleep(1)`.
 
-## ❌ Copilot Should NOT:
-- Suggest relative imports (../../)
-- Put business logic inside controllers
-- Call LLMs directly from domain/application layers
-- Mix evaluation code inside src/
+### B. File: `src/clinical_app/infrastructure/repositories/postgres_repo.py`
+Implement the `ArtifactRepository` interface with placeholder logic for database saving.
+* Class: `PostgresArtifactRepository(ArtifactRepository)`
+* Methods: `save_note_summary` and `save_account_summary` should print a debug message instead of connecting to a real DB.
 
+## 4. Application Logic (Use Case)
+
+### A. File: `src/clinical_app/application/use_cases/summarize_account.py`
+Create the orchestration logic. This is the **main service** for the workflow.
+* Class: `AccountSummarizationUseCase`
+* `__init__` must inject the two Ports: `agent: NoteProcessorAgent` and `repo: ArtifactRepository`.
+* Method: `execute(self, account_id: str, notes: List[ClinicalNote]) -> dict`.
+* The `execute` method must:
+    1.  Define an inner async function `process_and_save_single_note(note)`.
+    2.  Use a list comprehension to create tasks: `tasks = [process_and_save_single_note(note) for note in notes]`.
+    3.  Execute tasks with `individual_summaries = await asyncio.gather(*tasks)`.
+    4.  Call the repository to save the final aggregated summary.
+
+## 5. API and Dependencies
+
+### A. File: `src/clinical_app/api/dependencies.py`
+Write the Dependency Injection setup to wire concrete implementations to interfaces.
+* Function `get_repository()`: Returns a `PostgresArtifactRepository` instance.
+* Function `get_agent()`: Returns an `OpenAINoteProcessor` instance with a default concurrency limit of `5`.
+* Function `get_summarization_use_case()`: Uses `FastAPI.Depends` to inject the repository and agent into `AccountSummarizationUseCase`.
+
+### B. File: `src/clinical_app/application/dtos/clinical_dtos.py`
+Create Pydantic models for API input.
+* Class: `NoteInput(BaseModel)` (must match `ClinicalNote` fields).
+* Class: `AccountSummaryRequest(BaseModel)`: Contains `account_id: str` and `notes: List[NoteInput]`.
+
+### C. File: `src/clinical_app/api/v1/clinical/endpoints.py`
+Create the FastAPI router and endpoint.
+* Define a POST endpoint `/api/v1/clinical/summaries/accounts`.
+* The endpoint function must accept the `AccountSummaryRequest` DTO and the injected `AccountSummarizationUseCase`.
+* It should transform the DTO input into Domain Models (`ClinicalNote`) before passing to the use case.
